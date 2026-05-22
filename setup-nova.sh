@@ -84,37 +84,19 @@ echo ""
 warn "This may take 2–5 minutes — Printing Press is designing the optimal CLI..."
 echo ""
 
-# Try printing-press with various flag styles (the CLI may use different conventions)
-# Primary attempt: --spec flag with --brief context
-if printing-press print \
+# Run printing-press generate with the correct flags (v4.9.0+)
+printing-press generate \
     --spec "$SPEC_FILE" \
     --name "$CLI_NAME" \
-    $BRIEF_ARGS \
-    --out "$NOVA_OUTPUT_DIR" \
-    --mcp \
-    --skill 2>/dev/null; then
-  success "Printing Press completed successfully!"
-
-# Fallback: try --input instead of --spec
-elif printing-press print \
-    --input "$SPEC_FILE" \
-    --name "$CLI_NAME" \
-    $BRIEF_ARGS \
-    --out "$NOVA_OUTPUT_DIR" 2>/dev/null; then
-  success "Printing Press completed (fallback mode)!"
-
-# Fallback: pipe the spec directly
-else
-  warn "Trying alternative invocation..."
-  cat "$SPEC_FILE" | printing-press print \
-    --name "$CLI_NAME" \
-    --out "$NOVA_OUTPUT_DIR" || {
-    err "All printing-press invocations failed."
-    err "Check the printing-press docs: printing-press --help"
-    err "Then manually run: printing-press print --spec $SPEC_FILE --name nova --out $NOVA_OUTPUT_DIR"
-    exit 1
-  }
-fi
+    --output "$NOVA_OUTPUT_DIR" \
+    --spec-source official \
+    --polish || {
+  err "printing-press generate failed."
+  err "Check the output above, then retry manually:"
+  err "  printing-press generate --spec $SPEC_FILE --name nova --output $NOVA_OUTPUT_DIR"
+  exit 1
+}
+success "Printing Press generate completed!"
 
 # ── Step 4: Build the Go binary ───────────────────────────────────────────────
 echo ""
