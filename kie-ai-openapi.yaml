@@ -1,0 +1,1688 @@
+openapi: 3.0.3
+info:
+  title: KIE.AI — Full API Spec for Nova CLI
+  version: "2.0"
+  description: |
+    KIE.AI is a unified AI creative platform: one API key unlocks 100+ models
+    for image generation, video creation, music production, text-to-speech, and
+    speech processing — all at 30–80% below official API prices.
+
+    ## SECRET IDENTITY (for Printing Press)
+    Nova is an AI creative studio CLI. The user thinks of it as a command that
+    makes creative AI things happen — images, videos, music, voiceovers, stems,
+    MIDI, lyrics. They should never see raw HTTP. Every command either returns
+    a result directly (poll-until-done by default) or prints a taskId for
+    async tracking. Nova's compound power: chaining commands across creative
+    pipelines (generate image → animate it → add music).
+
+    ## Authentication
+    Every request: `Authorization: Bearer <api_key>`
+    Key management: https://kie.ai/api-key
+    Config: store in env var KIE_API_KEY or ~/.nova/config
+
+    ## API Families (4 distinct base patterns)
+
+    ### 1. Market Models (image/video/audio via createTask)
+    POST /api/v1/jobs/createTask  — create task, returns {taskId}
+    GET  /api/v1/jobs/recordInfo  — poll status, returns state + resultUrls
+
+    ### 2. Suno Music API (independent endpoints)
+    POST /api/v1/generate         — generate music
+    POST /api/v1/generate/extend  — extend a track
+    POST /api/v1/generate/lyrics  — generate lyrics
+    POST /api/v1/generate/cover   — cover an existing song
+    POST /api/v1/generate/add-instrumental — add instrumental layer
+    POST /api/v1/generate/add-vocals      — add vocals to instrumental
+    POST /api/v1/generate/stems           — separate vocals/instruments
+    POST /api/v1/generate/midi            — extract MIDI from audio
+    POST /api/v1/generate/wav             — convert audio to WAV
+    POST /api/v1/generate/sounds          — generate sound effects
+    POST /api/v1/generate/music-video     — create music video from track
+    POST /api/v1/generate/mashup          — mashup two songs
+    GET  /api/v1/tasks/{taskId}           — poll Suno task status
+
+    ### 3. Veo3.1 Video API (dedicated endpoints)
+    POST /api/v1/veo3/generate    — generate Veo3.1 video
+    POST /api/v1/veo3/extend      — extend a Veo3.1 video
+    GET  /api/v1/veo3/details     — get task details
+    GET  /api/v1/veo3/1080p       — get 1080P version
+    GET  /api/v1/veo3/4k          — get 4K version
+
+    ### 4. Runway Video API (dedicated endpoints)
+    POST /api/v1/runway/generate  — generate Runway video
+    POST /api/v1/runway/extend    — extend Runway video
+    GET  /api/v1/runway/details   — get task details
+
+    ## Rate Limits
+    20 requests per 10 seconds. HTTP 429 on excess.
+
+    ## Data Retention
+    Generated media: 14 days. Log records: 2 months.
+    Download results promptly for long-term access.
+
+servers:
+  - url: https://api.kie.ai
+    description: KIE.AI production API
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    TaskId:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        msg:
+          type: string
+          example: success
+        data:
+          type: object
+          properties:
+            taskId:
+              type: string
+              description: "Unique task identifier — use to poll for results"
+
+    MarketTaskStatus:
+      type: object
+      description: "Response from GET /api/v1/jobs/recordInfo"
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            taskId:
+              type: string
+            model:
+              type: string
+              description: "The model string used to create this task"
+            state:
+              type: string
+              enum: [waiting, queuing, generating, success, fail]
+            param:
+              type: string
+              description: "JSON string of original request parameters"
+            resultJson:
+              type: string
+              description: |
+                JSON string — parse to get result URLs.
+                Image/video tasks: {"resultUrls": ["https://cdn.kie.ai/..."]}
+                Result URLs expire after 24 hours.
+            failCode:
+              type: string
+            failMsg:
+              type: string
+            costTime:
+              type: integer
+              description: "Processing time in milliseconds"
+            completeTime:
+              type: integer
+              description: "Unix timestamp (ms) of completion"
+            createTime:
+              type: integer
+              description: "Unix timestamp (ms) of creation"
+            progress:
+              type: integer
+              description: "Generation progress 0-100"
+            creditsConsumed:
+              type: integer
+
+    SunoTaskStatus:
+      type: object
+      description: "Response from GET /api/v1/tasks/{taskId} for Suno operations"
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            taskId:
+              type: string
+            state:
+              type: string
+              enum: [pending, generating, success, fail]
+            clips:
+              type: array
+              description: "Generated music tracks (usually 2 per request)"
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  audio_url:
+                    type: string
+                    format: uri
+                    description: "Direct MP3 download URL"
+                  image_url:
+                    type: string
+                    format: uri
+                    description: "Cover art URL"
+                  duration:
+                    type: number
+                    description: "Track duration in seconds"
+                  tags:
+                    type: string
+                    description: "Style tags applied"
+                  model_name:
+                    type: string
+
+    RunwayTaskStatus:
+      type: object
+      description: "Response from GET /api/v1/runway/details"
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            taskId:
+              type: string
+            state:
+              type: string
+              enum: [wait, queueing, generating, success, fail]
+            generateTime:
+              type: string
+            videoInfo:
+              type: object
+              properties:
+                videoId:
+                  type: string
+                videoUrl:
+                  type: string
+                  format: uri
+                imageUrl:
+                  type: string
+                  format: uri
+                  description: "Thumbnail/preview image"
+            expireFlag:
+              type: integer
+              enum: [0, 1]
+              description: "0 = active, 1 = expired (>14 days)"
+
+    Veo3TaskStatus:
+      type: object
+      description: "Response from GET /api/v1/veo3/details"
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            taskId:
+              type: string
+            successFlag:
+              type: integer
+              enum: [0, 1, 2, 3]
+              description: "0=generating, 1=success, 2=failed, 3=generation failed"
+            videoUrl:
+              type: string
+              format: uri
+            imageUrl:
+              type: string
+              format: uri
+              description: "Thumbnail"
+
+tags:
+  - name: images
+    description: "Image generation and editing — all use POST /api/v1/jobs/createTask"
+  - name: videos
+    description: "Video generation — Market models use createTask; Runway and Veo3.1 have dedicated endpoints"
+  - name: veo3
+    description: "Google Veo3.1 video generation — dedicated API family"
+  - name: runway
+    description: "Runway AI video generation — dedicated API family"
+  - name: music
+    description: "Suno AI music generation, editing, and processing"
+  - name: speech
+    description: "ElevenLabs text-to-speech, speech-to-text, audio isolation, dialogue"
+  - name: tasks
+    description: "Task status polling — universal task management"
+
+paths:
+
+  # ═══════════════════════════════════════════════════════════════
+  # MARKET MODELS — Image & Video & Audio (unified createTask)
+  # ═══════════════════════════════════════════════════════════════
+
+  /api/v1/jobs/createTask:
+    post:
+      tags: [images, videos, speech]
+      operationId: createMarketTask
+      summary: Create image, video, or audio task (Market models)
+      description: |
+        Unified endpoint for all Market-category AI models. Pass `model` to select
+        which model runs. Returns `taskId` — poll /api/v1/jobs/recordInfo for results.
+
+        ## ALL AVAILABLE MODEL STRINGS
+
+        ### IMAGE MODELS — Text to Image
+        | Model string | Description |
+        |---|---|
+        | flux-2/pro-text-to-image | Flux-2 Pro — best quality, 1K/2K/4K resolution |
+        | flux-2/flex-text-to-image | Flux-2 Flex — fast and affordable |
+        | grok-imagine/text-to-image | Grok Imagine — photorealistic |
+        | google/imagen4 | Google Imagen4 — state of the art |
+        | google/imagen4-fast | Google Imagen4 Fast — cheaper/faster |
+        | google/imagen4-ultra | Google Imagen4 Ultra — highest quality |
+        | google/nanobanana2 | Google Nano Banana 2 |
+        | google/nanobanana | Google Nano Banana |
+        | ideogram/v3-text-to-image | Ideogram V3 — excellent typography |
+        | ideogram/character | Ideogram Character — consistent characters |
+        | seedream/seedream-text-to-image | Seedream 3.0 |
+        | seedream/seedream-v4-text-to-image | Seedream 4.0 |
+        | seedream/4-5-text-to-image | Seedream 4.5 — improved quality |
+        | seedream/5-lite-text-to-image | Seedream 5.0 Lite |
+        | z-image/text-to-image | Z-Image — artistic styles |
+        | qwen/text-to-image | Qwen text-to-image — multilingual prompts |
+        | qwen2/text-to-image | Qwen2 text-to-image |
+        | gpt-image/1-5-text-to-image | GPT Image 1.5 text-to-image |
+        | gpt/gpt-image-2-text-to-image | GPT Image 2 text-to-image |
+        | wan/2-7-image | Wan 2.7 Image |
+        | wan/2-7-image-pro | Wan 2.7 Image Pro |
+
+        ### IMAGE MODELS — Image to Image
+        | Model string | Description |
+        |---|---|
+        | flux-2/pro-image-to-image | Flux-2 Pro image-to-image |
+        | flux-2/flex-image-to-image | Flux-2 Flex image-to-image |
+        | grok-imagine/image-to-image | Grok Imagine image-to-image |
+        | google/nano-banana-edit | Google Nano Banana Edit |
+        | google/pro-image-to-image | Google Nano Banana Pro |
+        | ideogram/v3-edit | Ideogram V3 Edit |
+        | ideogram/v3-remix | Ideogram V3 Remix |
+        | ideogram/character-edit | Ideogram Character Edit |
+        | ideogram/character-remix | Ideogram Character Remix |
+        | ideogram/v3-reframe | Ideogram V3 Reframe |
+        | seedream/seedream-v4-edit | Seedream 4.0 Edit |
+        | seedream/4-5-edit | Seedream 4.5 Edit |
+        | seedream/5-lite-image-to-image | Seedream 5.0 Lite Image-to-Image |
+        | qwen/image-to-image | Qwen image-to-image |
+        | qwen/image-edit | Qwen image edit |
+        | qwen2/image-edit | Qwen2 image edit |
+        | gpt-image/1-5-image-to-image | GPT Image 1.5 image-to-image |
+        | gpt/gpt-image-2-image-to-image | GPT Image 2 image-to-image |
+
+        ### IMAGE MODELS — Enhancement
+        | Model string | Description |
+        |---|---|
+        | topaz/image-upscale | Topaz AI image upscale (2x/4x) |
+        | recraft/crisp-upscale | Recraft crisp upscale |
+        | recraft/remove-background | Remove image background |
+
+        ### VIDEO MODELS — Text to Video
+        | Model string | Description |
+        |---|---|
+        | kling-2.6/text-to-video | Kling 2.6 — best all-round text-to-video |
+        | kling-3.0/text-to-video | Kling 3.0 — latest, highest quality |
+        | kling/v2-1-master-text-to-video | Kling V2.1 Master |
+        | kling/v2-1-pro | Kling V2.1 Pro |
+        | kling/v2-1-standard | Kling V2.1 Standard |
+        | kling/v25-turbo-text-to-video-pro | Kling V2.5 Turbo Pro |
+        | sora-2/text-to-video | Sora2 text-to-video |
+        | sora-2-pro/text-to-video | Sora2 Pro text-to-video (longer/higher quality) |
+        | wan-2.7/text-to-video | Wan 2.7 text-to-video |
+        | wan-2.6/text-to-video | Wan 2.6 text-to-video |
+        | wan-2.6-flash/text-to-video | Wan 2.6 Flash (fast) |
+        | wan-2.5/text-to-video | Wan 2.5 text-to-video |
+        | wan-2.2/text-to-video | Wan 2.2 A14B turbo |
+        | hailuo/02-text-to-video-pro | Hailuo Pro text-to-video |
+        | hailuo/02-text-to-video-standard | Hailuo Standard text-to-video |
+        | bytedance/seedance-2 | ByteDance Seedance 2.0 |
+        | bytedance/seedance-2-fast | ByteDance Seedance 2.0 Fast |
+        | bytedance/seedance-1-5-pro | ByteDance Seedance 1.5 Pro |
+        | bytedance/v1-pro-text-to-video | ByteDance V1 Pro text-to-video |
+        | bytedance/v1-lite-text-to-video | ByteDance V1 Lite text-to-video |
+        | grok-imagine/text-to-video | Grok Imagine text-to-video |
+        | happyhorse/text-to-video | HappyHorse text-to-video |
+
+        ### VIDEO MODELS — Image to Video
+        | Model string | Description |
+        |---|---|
+        | kling-2.6/image-to-video | Kling 2.6 image-to-video |
+        | kling-3.0/image-to-video | Kling 3.0 image-to-video |
+        | kling/v2-1-master-image-to-video | Kling V2.1 Master image-to-video |
+        | kling/v25-turbo-image-to-video-pro | Kling V2.5 Turbo Pro image-to-video |
+        | sora-2/image-to-video | Sora2 image-to-video |
+        | sora-2-pro/image-to-video | Sora2 Pro image-to-video |
+        | wan-2.7/image-to-video | Wan 2.7 image-to-video |
+        | wan-2.7/reference-to-video | Wan 2.7 reference-to-video |
+        | wan-2.6/image-to-video | Wan 2.6 image-to-video |
+        | wan-2.6-flash/image-to-video | Wan 2.6 Flash image-to-video |
+        | wan-2.5/image-to-video | Wan 2.5 image-to-video |
+        | wan-2.2/image-to-video | Wan 2.2 A14B image-to-video turbo |
+        | hailuo/02-image-to-video-pro | Hailuo Pro image-to-video |
+        | hailuo/02-image-to-video-standard | Hailuo Standard image-to-video |
+        | hailuo/2-3-image-to-video-pro | Hailuo 2.3 Pro image-to-video |
+        | hailuo/2-3-image-to-video-standard | Hailuo 2.3 Standard image-to-video |
+        | bytedance/v1-pro-image-to-video | ByteDance V1 Pro image-to-video |
+        | bytedance/v1-pro-fast-image-to-video | ByteDance V1 Pro Fast image-to-video |
+        | bytedance/v1-lite-image-to-video | ByteDance V1 Lite image-to-video |
+        | grok-imagine/image-to-video | Grok Imagine image-to-video |
+        | happyhorse/image-to-video | HappyHorse image-to-video |
+        | happyhorse/reference-to-video | HappyHorse reference-to-video |
+
+        ### VIDEO MODELS — Video to Video / Edit
+        | Model string | Description |
+        |---|---|
+        | wan-2.7/video-edit | Wan 2.7 video edit |
+        | wan-2.6/video-to-video | Wan 2.6 video-to-video |
+        | wan-2.6-flash/video-to-video | Wan 2.6 Flash video-to-video |
+        | wan-2.2/animate-move | Wan animate-move |
+        | wan-2.2/animate-replace | Wan animate-replace |
+        | happyhorse/video-edit | HappyHorse video edit |
+        | sora-2/watermark-remover | Sora2 watermark remover |
+
+        ### VIDEO MODELS — Motion Control & Avatar
+        | Model string | Description |
+        |---|---|
+        | kling-2.6/motion-control | Kling 2.6 motion control |
+        | kling-3.0/motion-control | Kling 3.0 motion control |
+        | kling/ai-avatar-standard | Kling AI Avatar Standard |
+        | kling/ai-avatar-pro | Kling AI Avatar Pro |
+        | sora-2/characters | Sora2 Characters |
+        | sora-2-pro/characters | Sora2 Pro Characters |
+        | sora-2/storyboard | Sora2 Pro Storyboard |
+        | wan-2.2/speech-to-video | Wan 2.2 Speech-to-Video |
+
+        ### VIDEO MODELS — Upscale & Enhancement
+        | Model string | Description |
+        |---|---|
+        | topaz/video-upscale | Topaz AI video upscale |
+        | grok-imagine/video-upscale | Grok Imagine video upscale |
+        | grok-imagine/video-extend | Grok Imagine video extend |
+
+        ### AUDIO MODELS — ElevenLabs (via createTask)
+        | Model string | Description |
+        |---|---|
+        | elevenlabs/text-to-speech-turbo-2-5 | TTS Turbo v2.5 — fast, high quality |
+        | elevenlabs/text-to-speech-multilingual-v2 | TTS Multilingual v2 — 29 languages |
+        | elevenlabs/text-to-dialogue-v3 | Dialogue generation v3 |
+        | elevenlabs/audio-isolation | Audio isolation / noise removal |
+        | elevenlabs/speech-to-text | Speech transcription |
+        | elevenlabs/sound-effect-v2 | Sound effect generation |
+
+        ### AUDIO MODELS — Infinitalk
+        | Model string | Description |
+        |---|---|
+        | infinitalk/from-audio | Infinitalk audio processing |
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model, input]
+              properties:
+                model:
+                  type: string
+                  description: "Model identifier (see full list in description)"
+                  example: "flux-2/pro-text-to-image"
+                callBackUrl:
+                  type: string
+                  format: uri
+                  description: "Webhook URL — POST'd on task completion. Use in production to avoid polling."
+                input:
+                  type: object
+                  description: |
+                    Model-specific parameters. Common fields by category:
+
+                    TEXT-TO-IMAGE:
+                      prompt (string, required) — image description
+                      aspect_ratio (string) — "1:1"|"16:9"|"9:16"|"4:3"|"3:4"|"3:2"|"2:3"
+                      resolution (string) — "1K"|"2K"|"4K" (model-dependent)
+                      nsfw_checker (boolean) — enable safety filter
+                      negative_prompt (string) — elements to exclude
+
+                    IMAGE-TO-IMAGE (adds):
+                      image_url (string, uri) — source image URL
+                      image_strength (number, 0-1) — how much to preserve original
+
+                    TEXT-TO-VIDEO:
+                      prompt (string, required) — scene description
+                      aspect_ratio (string) — "16:9"|"9:16"|"1:1"
+                      duration (string) — "5"|"10" seconds
+                      sound (boolean) — include audio (Kling 3.0+)
+
+                    IMAGE-TO-VIDEO (adds):
+                      image_url (string, uri) — starting frame
+                      negative_prompt (string)
+
+                    VIDEO-TO-VIDEO (adds):
+                      video_url (string, uri) — source video
+                      prompt (string) — editing instructions
+
+                    TOPAZ UPSCALE:
+                      image_url or video_url (string, uri) — source media
+                      scale (integer, 2 or 4) — upscale factor
+
+                    RECRAFT:
+                      image_url (string, uri) — source image
+
+                    ELEVENLABS TTS:
+                      text (string, required) — text to synthesize
+                      voice_id (string) — ElevenLabs voice ID
+                      model_id (string) — "eleven_turbo_v2_5"|"eleven_multilingual_v2"
+                      stability (number, 0-1) — voice stability
+                      similarity_boost (number, 0-1) — voice similarity
+
+                    ELEVENLABS STT:
+                      audio_url (string, uri) — audio to transcribe
+                      language_code (string) — BCP-47 language code
+
+                    ELEVENLABS SOUND EFFECT:
+                      text (string, required) — sound description
+                      duration_seconds (number, 0.5-22)
+                  additionalProperties: true
+            examples:
+              image_flux_pro:
+                summary: "High-quality image with Flux-2 Pro"
+                value:
+                  model: "flux-2/pro-text-to-image"
+                  input:
+                    prompt: "Cinematic portrait of a red fox in a snowy forest, golden hour"
+                    aspect_ratio: "3:2"
+                    resolution: "1K"
+              image_ideogram:
+                summary: "Ideogram V3 with typography"
+                value:
+                  model: "ideogram/v3-text-to-image"
+                  input:
+                    prompt: "A minimalist poster with the word NOVA in bold sans-serif, dark background"
+                    aspect_ratio: "9:16"
+              image_gpt2:
+                summary: "GPT Image 2 text-to-image"
+                value:
+                  model: "gpt/gpt-image-2-text-to-image"
+                  input:
+                    prompt: "Product photo: a sleek black smartwatch on white marble"
+                    aspect_ratio: "1:1"
+              image_to_image_flux:
+                summary: "Transform existing image with Flux"
+                value:
+                  model: "flux-2/pro-image-to-image"
+                  input:
+                    prompt: "Make it look like an oil painting in the style of Rembrandt"
+                    image_url: "https://example.com/photo.jpg"
+                    image_strength: 0.7
+              video_kling_text:
+                summary: "Kling 2.6 text-to-video"
+                value:
+                  model: "kling-2.6/text-to-video"
+                  input:
+                    prompt: "A lone astronaut walks across a red Martian landscape at sunset"
+                    aspect_ratio: "16:9"
+                    duration: "5"
+              video_sora2:
+                summary: "Sora2 text-to-video"
+                value:
+                  model: "sora-2/text-to-video"
+                  input:
+                    prompt: "Hyperrealistic drone shot flying over a tropical rainforest"
+                    aspect_ratio: "16:9"
+                    duration: "10"
+              video_kling_image_animate:
+                summary: "Animate a photo with Kling"
+                value:
+                  model: "kling-2.6/image-to-video"
+                  input:
+                    prompt: "The person slowly turns and smiles at the camera"
+                    image_url: "https://example.com/portrait.jpg"
+                    duration: "5"
+              video_wan_27:
+                summary: "Wan 2.7 image-to-video"
+                value:
+                  model: "wan-2.7/image-to-video"
+                  input:
+                    prompt: "Gentle waves ripple across the water surface"
+                    image_url: "https://example.com/lake.jpg"
+              upscale_image:
+                summary: "Topaz 4x image upscale"
+                value:
+                  model: "topaz/image-upscale"
+                  input:
+                    image_url: "https://example.com/small.jpg"
+                    scale: 4
+              remove_background:
+                summary: "Remove image background"
+                value:
+                  model: "recraft/remove-background"
+                  input:
+                    image_url: "https://example.com/product.jpg"
+              elevenlabs_tts:
+                summary: "ElevenLabs text-to-speech"
+                value:
+                  model: "elevenlabs/text-to-speech-turbo-2-5"
+                  input:
+                    text: "Welcome to Nova — your AI creative studio."
+                    voice_id: "21m00Tcm4TlvDq8ikWAM"
+                    stability: 0.5
+                    similarity_boost: 0.75
+              elevenlabs_stt:
+                summary: "ElevenLabs speech-to-text"
+                value:
+                  model: "elevenlabs/speech-to-text"
+                  input:
+                    audio_url: "https://example.com/recording.mp3"
+                    language_code: "en"
+              elevenlabs_sound:
+                summary: "Generate a sound effect"
+                value:
+                  model: "elevenlabs/sound-effect-v2"
+                  input:
+                    text: "Dramatic cinematic explosion with debris"
+                    duration_seconds: 3.0
+      responses:
+        "200":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+        "401":
+          description: Invalid or missing API key
+        "429":
+          description: Rate limit exceeded
+
+  /api/v1/jobs/recordInfo:
+    get:
+      tags: [tasks]
+      operationId: getMarketTaskStatus
+      summary: Poll Market task status and results
+      description: |
+        Poll after any createTask call (image/video/speech).
+        Parse `resultJson` as JSON when state == "success":
+          Image/video: {"resultUrls": ["https://..."]}
+        Polling strategy: 2s → 4s → 8s → 16s → 30s max. Timeout at 15 min.
+        Download result URLs within 24h (URLs expire). Media deleted after 14 days.
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema:
+            type: string
+          example: "task_flux-2_1765175072483"
+      responses:
+        "200":
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketTaskStatus"
+              examples:
+                generating:
+                  value:
+                    code: 200
+                    data:
+                      taskId: "task_flux-2_1765175072483"
+                      state: "generating"
+                      progress: 60
+                success:
+                  value:
+                    code: 200
+                    data:
+                      taskId: "task_flux-2_1765175072483"
+                      state: "success"
+                      resultJson: '{"resultUrls":["https://cdn.kie.ai/img/abc123.jpg"]}'
+                      creditsConsumed: 30
+                      costTime: 12500
+
+  # ═══════════════════════════════════════════════════════════════
+  # VEO3.1 — Dedicated video generation API
+  # ═══════════════════════════════════════════════════════════════
+
+  /api/v1/veo3/generate:
+    post:
+      tags: [veo3, videos]
+      operationId: generateVeo3Video
+      summary: Generate video with Google Veo3.1
+      description: |
+        Google's Veo 3.1 — high-fidelity video generation with support for
+        text-to-video and image-to-video. Supports 16:9 for 1080P HD export.
+
+        Models: veo3 (quality) | veo3_fast (speed)
+        After success, optionally call GET /api/v1/veo3/1080p for HD version.
+        Veo3.1 generates videos with audio by default.
+
+        successFlag values: 0=generating, 1=success, 2=failed, 3=gen_failed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  description: "Detailed scene description. Include actions, lighting, style, camera movement."
+                  example: "A majestic bald eagle soars over a misty Pacific Northwest forest at dawn"
+                model:
+                  type: string
+                  enum: [veo3, veo3_fast]
+                  default: "veo3"
+                  description: "veo3 = quality (slower), veo3_fast = speed (cheaper)"
+                aspectRatio:
+                  type: string
+                  enum: ["16:9", "9:16", "1:1", "4:3", "3:4"]
+                  default: "16:9"
+                  description: "Use 16:9 to unlock 1080P HD export"
+                imageUrl:
+                  type: string
+                  format: uri
+                  description: "Optional: animate this image (image-to-video)"
+                callBackUrl:
+                  type: string
+                  format: uri
+            examples:
+              text_to_video:
+                value:
+                  prompt: "Cinematic timelapse of the Milky Way rising over a desert landscape, 4K quality"
+                  model: "veo3"
+                  aspectRatio: "16:9"
+              image_to_video:
+                value:
+                  prompt: "The flowers gently sway in a breeze"
+                  imageUrl: "https://example.com/flowers.jpg"
+                  model: "veo3_fast"
+                  aspectRatio: "16:9"
+      responses:
+        "200":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/veo3/details:
+    get:
+      tags: [veo3, tasks]
+      operationId: getVeo3TaskStatus
+      summary: Poll Veo3.1 task status
+      description: |
+        Poll after /api/v1/veo3/generate.
+        successFlag: 0=generating, 1=success, 2=failed, 3=generation failed
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Veo3TaskStatus"
+
+  /api/v1/veo3/1080p:
+    get:
+      tags: [veo3]
+      operationId: getVeo3HD
+      summary: Get 1080P version of completed Veo3.1 video
+      description: |
+        After a 16:9 Veo3.1 video succeeds, call this to get the 1080P HD version.
+        Wait a few minutes after video completion before calling — HD processing
+        takes additional time.
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 1080P video URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      videoUrl:
+                        type: string
+                        format: uri
+
+  /api/v1/veo3/4k:
+    post:
+      tags: [veo3]
+      operationId: getVeo3_4K
+      summary: Get 4K version of completed Veo3.1 video
+      description: "Upscale a completed Veo3.1 video to 4K resolution."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: 4K upscale task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/veo3/extend:
+    post:
+      tags: [veo3]
+      operationId: extendVeo3Video
+      summary: Extend a Veo3.1 video
+      description: "Add more video to the end of an existing Veo3.1 generation."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, prompt]
+              properties:
+                taskId:
+                  type: string
+                  description: "Original Veo3.1 task ID"
+                prompt:
+                  type: string
+                  description: "What should happen next in the video"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Extension task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  # ═══════════════════════════════════════════════════════════════
+  # RUNWAY — Dedicated video generation API
+  # ═══════════════════════════════════════════════════════════════
+
+  /api/v1/runway/generate:
+    post:
+      tags: [runway, videos]
+      operationId: generateRunwayVideo
+      summary: Generate video with Runway AI
+      description: |
+        Runway's AI video generation. Supports text-to-video and image-to-video.
+        Also supports Aleph model (cinematic quality).
+
+        Duration: 5 seconds (720p or 1080p) or 10 seconds (720p only)
+        Aspect ratios: 16:9 | 9:16 | 1:1 | 4:3 | 3:4
+        Poll status with GET /api/v1/runway/details
+
+        For Aleph model (ultra-cinematic): use model="aleph"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt, duration, quality, aspectRatio]
+              properties:
+                prompt:
+                  type: string
+                  description: "Scene description. Include camera movement, lighting, style."
+                  example: "Slow-motion shot of a waterfall cascading into a crystal pool"
+                model:
+                  type: string
+                  enum: [gen3a_turbo, aleph]
+                  default: "gen3a_turbo"
+                  description: "gen3a_turbo = fast Runway; aleph = Aleph cinematic model"
+                duration:
+                  type: integer
+                  enum: [5, 10]
+                  description: "5s (720p or 1080p) or 10s (720p only)"
+                quality:
+                  type: string
+                  enum: ["720p", "1080p"]
+                  description: "720p for all durations; 1080p for 5s only"
+                aspectRatio:
+                  type: string
+                  enum: ["16:9", "9:16", "1:1", "4:3", "3:4"]
+                imageUrl:
+                  type: string
+                  format: uri
+                  description: "Optional: reference image for image-to-video"
+                waterMark:
+                  type: string
+                  description: "Optional watermark text. Empty = no watermark."
+                callBackUrl:
+                  type: string
+                  format: uri
+            examples:
+              text_to_video_hd:
+                summary: "Runway text-to-video 1080p"
+                value:
+                  prompt: "A peacock spreads its feathers in slow motion, macro lens"
+                  duration: 5
+                  quality: "1080p"
+                  aspectRatio: "16:9"
+              text_to_video_long:
+                summary: "Runway 10-second video"
+                value:
+                  prompt: "City traffic time-lapse at night, neon reflections on wet streets"
+                  duration: 10
+                  quality: "720p"
+                  aspectRatio: "16:9"
+              image_animate:
+                summary: "Animate a photo with Runway"
+                value:
+                  prompt: "Gentle waves ripple across the water"
+                  imageUrl: "https://example.com/ocean.jpg"
+                  duration: 5
+                  quality: "720p"
+                  aspectRatio: "16:9"
+              aleph_cinematic:
+                summary: "Aleph model — ultra-cinematic"
+                value:
+                  prompt: "Sweeping aerial shot over snow-capped mountains at golden hour"
+                  model: "aleph"
+                  duration: 5
+                  quality: "1080p"
+                  aspectRatio: "16:9"
+      responses:
+        "200":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/runway/details:
+    get:
+      tags: [runway, tasks]
+      operationId: getRunwayTaskStatus
+      summary: Poll Runway task status
+      description: |
+        Poll after /api/v1/runway/generate or /api/v1/runway/extend.
+        When state == "success", videoInfo contains videoUrl and imageUrl (thumbnail).
+        expireFlag: 0 = active, 1 = expired (>14 days).
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunwayTaskStatus"
+
+  /api/v1/runway/extend:
+    post:
+      tags: [runway]
+      operationId: extendRunwayVideo
+      summary: Extend a Runway video
+      description: "Extend an existing Runway video. Use the original taskId as reference."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, prompt, duration, quality, aspectRatio]
+              properties:
+                taskId:
+                  type: string
+                  description: "Original Runway task ID"
+                prompt:
+                  type: string
+                duration:
+                  type: integer
+                  enum: [5, 10]
+                quality:
+                  type: string
+                  enum: ["720p", "1080p"]
+                aspectRatio:
+                  type: string
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Extension task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  # ═══════════════════════════════════════════════════════════════
+  # SUNO — Music generation (full suite)
+  # ═══════════════════════════════════════════════════════════════
+
+  /api/v1/generate:
+    post:
+      tags: [music]
+      operationId: generateMusic
+      summary: Generate music with Suno AI
+      description: |
+        Generate AI music. Quick mode: just a prompt. Custom mode: full control.
+
+        QUICK MODE (customMode: false, default):
+          Only `prompt` required. Suno auto-generates style, title, everything.
+          Best for: "a chill lo-fi beat", "upbeat pop song about summer"
+
+        CUSTOM MODE (customMode: true):
+          With instrumental: true → requires style + title
+          With instrumental: false → requires style + prompt (lyrics) + title
+
+        MODELS: V4 | V4_5 | V4_5PLUS | V4_5ALL | V5 | V5_5
+        V4_5 is the recommended default. V5/V5_5 are newest flagship.
+
+        Character limits:
+          V4: prompt ≤3000, style ≤200
+          V4_5/V4_5PLUS/V4_5ALL: prompt ≤5000, style ≤1000
+          V5/V5_5: prompt ≤5000, style ≤1000
+          title: ≤80 (all models)
+
+        Callback stages: text → first (first track done) → complete (all done)
+        Generates 2 tracks per request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  example: "A calm and relaxing piano track with soft melodies"
+                customMode:
+                  type: boolean
+                  default: false
+                instrumental:
+                  type: boolean
+                  default: false
+                model:
+                  type: string
+                  enum: [V4, V4_5, V4_5PLUS, V4_5ALL, V5, V5_5]
+                  default: "V4_5"
+                style:
+                  type: string
+                  description: "Genre/style tags. Required for customMode: true."
+                  example: "Lo-fi Hip Hop, Chill, Piano"
+                title:
+                  type: string
+                  maxLength: 80
+                  description: "Song title. Required for customMode: true."
+                negativeTags:
+                  type: string
+                  description: "Styles/elements to avoid"
+                  example: "Heavy Metal, Upbeat Drums"
+                vocalGender:
+                  type: string
+                  enum: ["m", "f"]
+                  description: "m = male vocals, f = female vocals"
+                styleWeight:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0.5
+                weirdnessConstraint:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  description: "0 = safe/predictable, 1 = experimental/wild"
+                audioWeight:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                personaId:
+                  type: string
+                  description: "Custom voice persona ID (from suno voice API)"
+                callBackUrl:
+                  type: string
+                  format: uri
+            examples:
+              quick:
+                summary: "Quick mode — just a prompt"
+                value:
+                  prompt: "An upbeat pop song about driving through California in summer"
+                  model: "V4_5"
+              custom_instrumental:
+                summary: "Custom instrumental"
+                value:
+                  customMode: true
+                  instrumental: true
+                  style: "Cinematic Orchestral, Epic, Strings"
+                  title: "Rise of the Nova"
+                  model: "V5"
+                  prompt: ""
+              custom_with_lyrics:
+                summary: "Custom song with lyrics"
+                value:
+                  customMode: true
+                  instrumental: false
+                  prompt: "[Verse]\nIn the glow of the city lights\nEvery star feels close tonight"
+                  style: "Indie Pop, Dreamy, Female Vocals"
+                  title: "City Lights"
+                  vocalGender: "f"
+                  model: "V4_5"
+      responses:
+        "200":
+          description: Music generation task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/extend:
+    post:
+      tags: [music]
+      operationId: extendMusic
+      summary: Extend a Suno track
+      description: "Add more music to an existing clip. Good for making short songs longer or adding a new section."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+                  description: "Task ID of the original music generation"
+                prompt:
+                  type: string
+                  description: "Lyrics or direction for the extension section"
+                style:
+                  type: string
+                continueAt:
+                  type: number
+                  description: "Time in seconds to branch from. Default: end of track."
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Extension task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/lyrics:
+    post:
+      tags: [music]
+      operationId: generateLyrics
+      summary: Generate song lyrics
+      description: "Generate structured lyrics (verses, chorus, bridge) from a topic or theme. Use the output as `prompt` for /api/v1/generate with customMode: true."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  description: "Topic, theme, mood, or brief for the song"
+                  example: "A bittersweet song about moving to a new city and missing home"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Lyrics generation task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/cover:
+    post:
+      tags: [music]
+      operationId: coverSuno
+      summary: Generate a cover of an existing Suno track
+      description: "Create a new version of a Suno track in a different style."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+                  description: "Task ID of the original Suno track"
+                style:
+                  type: string
+                  description: "New style to apply to the cover version"
+                  example: "Jazz, Acoustic, Stripped Down"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Cover generation task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/upload-and-cover:
+    post:
+      tags: [music]
+      operationId: uploadAndCoverAudio
+      summary: Upload external audio and create a Suno cover
+      description: "Upload any audio file (not just Suno-generated) and create an AI cover in a new style."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audioUrl, style]
+              properties:
+                audioUrl:
+                  type: string
+                  format: uri
+                  description: "URL of the audio to cover"
+                style:
+                  type: string
+                  description: "Target style for the cover"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Cover task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/upload-and-extend:
+    post:
+      tags: [music]
+      operationId: uploadAndExtendAudio
+      summary: Upload external audio and extend it with Suno
+      description: "Upload any audio file and let Suno continue/extend it."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audioUrl]
+              properties:
+                audioUrl:
+                  type: string
+                  format: uri
+                prompt:
+                  type: string
+                  description: "Optional lyrics or direction for the extension"
+                style:
+                  type: string
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Extension task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/add-instrumental:
+    post:
+      tags: [music]
+      operationId: addInstrumental
+      summary: Add instrumental layer to a Suno track
+      description: "Generate and add an instrumental backing track to an existing vocal-only Suno track."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Instrumental add task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/add-vocals:
+    post:
+      tags: [music]
+      operationId: addVocals
+      summary: Add vocals to an instrumental Suno track
+      description: "Generate and add AI vocals to an instrumental Suno track."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+                prompt:
+                  type: string
+                  description: "Lyrics for the vocal track"
+                vocalGender:
+                  type: string
+                  enum: ["m", "f"]
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Vocal add task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/stems:
+    post:
+      tags: [music]
+      operationId: separateVocals
+      summary: Separate vocals and instruments (stem separation)
+      description: |
+        Split any audio track into separate stems:
+        - vocals.mp3 (isolated voice)
+        - instrumental.mp3 (music without vocals)
+        Useful for: karaoke tracks, remixing, sampling.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audioUrl]
+              properties:
+                audioUrl:
+                  type: string
+                  format: uri
+                  description: "URL of audio to separate"
+                callBackUrl:
+                  type: string
+                  format: uri
+            example:
+              audioUrl: "https://example.com/song.mp3"
+      responses:
+        "200":
+          description: Stem separation task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/midi:
+    post:
+      tags: [music]
+      operationId: generateMidi
+      summary: Extract MIDI from audio
+      description: "Convert audio to MIDI notation. Useful for transcribing melodies or creating sheet music."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audioUrl]
+              properties:
+                audioUrl:
+                  type: string
+                  format: uri
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: MIDI generation task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/wav:
+    post:
+      tags: [music]
+      operationId: convertToWav
+      summary: Convert audio to WAV format
+      description: "Convert any audio file (MP3, etc.) to uncompressed WAV format for professional use."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audioUrl]
+              properties:
+                audioUrl:
+                  type: string
+                  format: uri
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: WAV conversion task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/sounds:
+    post:
+      tags: [music]
+      operationId: generateSounds
+      summary: Generate sound effects
+      description: "Generate custom sound effects from a text description. Good for game audio, film, podcasts."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  description: "Describe the sound effect"
+                  example: "A thunderclap followed by heavy rain on a metal roof"
+                duration:
+                  type: number
+                  description: "Duration in seconds (optional)"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Sound generation task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/music-video:
+    post:
+      tags: [music]
+      operationId: createMusicVideo
+      summary: Create a music video from a Suno track
+      description: "Generate a music video with AI-generated visuals synchronized to a Suno track."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+                  description: "Task ID of the Suno music track"
+                prompt:
+                  type: string
+                  description: "Optional: visual style direction for the video"
+                  example: "Neon-lit urban streets, rain, cyberpunk aesthetic"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Music video task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/mashup:
+    post:
+      tags: [music]
+      operationId: generateMashup
+      summary: Create a mashup of two songs
+      description: "Combine two Suno tracks or audio URLs into a creative mashup."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audioUrl1, audioUrl2]
+              properties:
+                audioUrl1:
+                  type: string
+                  format: uri
+                  description: "First track URL"
+                audioUrl2:
+                  type: string
+                  format: uri
+                  description: "Second track URL"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Mashup task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/replace-section:
+    post:
+      tags: [music]
+      operationId: replaceMusicSection
+      summary: Replace a section of a Suno track
+      description: "Replace a specific time range in a track with newly generated content."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, startTime, endTime]
+              properties:
+                taskId:
+                  type: string
+                startTime:
+                  type: number
+                  description: "Start of section to replace (seconds)"
+                endTime:
+                  type: number
+                  description: "End of section to replace (seconds)"
+                prompt:
+                  type: string
+                  description: "Lyrics/direction for the replacement section"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Section replacement task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/boost-style:
+    post:
+      tags: [music]
+      operationId: boostMusicStyle
+      summary: Boost/intensify the style of a track
+      description: "Apply a stronger version of the track's style or shift it in a new direction."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+                style:
+                  type: string
+                  description: "Override or augment the style"
+                boost:
+                  type: number
+                  minimum: 0
+                  maximum: 2
+                  description: "Style intensity multiplier"
+                callBackUrl:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Style boost task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskId"
+
+  /api/v1/generate/timestamped-lyrics:
+    post:
+      tags: [music]
+      operationId: getTimestampedLyrics
+      summary: Get timestamped lyrics for a track
+      description: "Extract lyrics with word-level timestamps from a completed Suno track. Useful for subtitles or karaoke."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+      responses:
+        "200":
+          description: Lyrics with timestamps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      lyrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            word:
+                              type: string
+                            startTime:
+                              type: number
+                            endTime:
+                              type: number
+
+  /api/v1/generate/persona:
+    post:
+      tags: [music]
+      operationId: generatePersona
+      summary: Create a Suno voice persona
+      description: "Create a custom AI voice persona for use in future Suno music generations via personaId."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, style]
+              properties:
+                name:
+                  type: string
+                  description: "Name for this persona"
+                style:
+                  type: string
+                  description: "Voice style description"
+                  example: "Warm, raspy baritone with a slight Southern drawl"
+                vocalGender:
+                  type: string
+                  enum: ["m", "f"]
+      responses:
+        "200":
+          description: Persona created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      personaId:
+                        type: string
+                      personaModel:
+                        type: string
+
+  /api/v1/tasks/{taskId}:
+    get:
+      tags: [tasks, music]
+      operationId: getSunoTaskStatus
+      summary: Poll Suno music task status
+      description: |
+        Poll Suno music tasks (use /api/v1/jobs/recordInfo for Market model tasks).
+        When state == "success", clips[] contains audio_url (MP3) and image_url (cover art).
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Suno task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SunoTaskStatus"
